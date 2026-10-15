@@ -1,14 +1,7 @@
-# Использование легковесного официального образа Python 3.13
-FROM python:3.13-slim
-
-# Установка рабочей директории внутри контейнера
-WORKDIR /app
-
-# Копирование файла приложения в рабочую директорию
-COPY app.py .
-
-# Информирование Docker о том, что контейнер слушает порт 8000
-EXPOSE 8000
-
-# Команда для запуска приложения при старте контейнера
+FROM python:3.13-slim 
+WORKDIR /app 
+COPY requirements.txt . 
+RUN pip install --no-cache-dir -r requirements.txt 
+COPY app.py . 
+EXPOSE 8000 
 CMD ["python", "app.py"]
