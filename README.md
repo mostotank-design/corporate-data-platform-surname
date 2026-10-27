@@ -14,3 +14,31 @@
 обработки данных, аналитика и мониторинг.
 ## Docker Первый сервис платформы контейнеризирован с помощью Docker. Для сборки образа используется команда: ``` docker build -t corporate-data-app:2.0 ./app ``` Для создания и запуска контейнера используется команда: ``` docker run -d -p 8000:8000 --name corporate-data-container-v2 corporate-data-app:2.0 ``` После запуска сервис доступен по адресу: 18 ``` http://localhost:8000 ``` Для остановки контейнера используется команда: ``` docker stop corporate-data-container-v2 ``` Для удаления остановленного контейнера используется команда: ``` docker rm corporate-data-container-v2 
 ## Docker Compose Платформа содержит многоконтейнерное приложение. На текущем этапе используются два сервиса: - `app` – Python-приложение; - `db` – PostgreSQL. Для запуска платформы: ``` docker compose up -d --build ``` 18 Проверка состояния: ``` docker compose ps ``` Просмотр журналов: ``` docker compose logs ``` Остановка: ``` docker compose down ``` После запуска приложение доступно по адресу: [http://localhost:8000](http://localhost:8000) 
+## Kubernetes
+
+Приложение может быть развернуто в локальном Kubernetes-кластере Docker Desktop.
+
+Манифесты находятся в каталоге:
+```text
+kubernetes/
+```
+
+Основной Deployment:
+```text
+corporate-data-deployment
+```
+
+PostgreSQL запускается отдельно через Docker Compose:
+```bash
+docker compose up -d db
+```
+
+Запуск Kubernetes-конфигурации:
+```bash
+kubectl apply -f kubernetes/deployment.yaml
+```
+
+Проверка:
+```bash
+kubectl get pods
+```
