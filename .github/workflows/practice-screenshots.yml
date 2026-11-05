@@ -302,6 +302,18 @@ jobs:
           grep -q 'rolled back' screenshots/failure-and-rollback.txt
           grep -q 'corporate-data-platform:2.2.0' screenshots/failure-and-rollback.txt
 
+          kill "$(cat /tmp/port-forward.pid)" 2>/dev/null || true
+          kubectl port-forward service/corporate-data-service 8080:80 > /tmp/port-forward-after-undo.log 2>&1 &
+          echo "$!" > /tmp/port-forward-after-undo.pid
+          for attempt in $(seq 1 30); do
+            if curl --silent --fail http://127.0.0.1:8080/ >/tmp/application-after-rollback.html; then
+              break
+            fi
+            sleep 2
+          done
+          grep -q 'Версия приложения: 2.2.0' /tmp/application-after-rollback.html
+          grep -q 'Northwind Analytics' /tmp/application-after-rollback.html
+
           python - <<'PY'
           from playwright.sync_api import sync_playwright
           with sync_playwright() as p:
