@@ -34,6 +34,7 @@ jobs:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          mkdir -p screenshots
           git fetch --tags origin
           {
             echo '$ git log --oneline --decorate -10 v2.2.0'
