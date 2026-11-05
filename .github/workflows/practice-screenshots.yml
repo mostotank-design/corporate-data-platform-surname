@@ -1,0 +1,371 @@
+name: Practice screenshots
+
+on:
+  push:
+    branches:
+      - codex/practice-3-5-screenshots
+
+permissions:
+  contents: read
+
+jobs:
+  kubernetes-rollout:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Prepare Kubernetes cluster
+        uses: helm/kind-action@v1.10.0
+        with:
+          cluster_name: practice-demo
+          node_image: kindest/node:v1.31.0
+
+      - name: Install browser for screenshots
+        run: |
+          python -m pip install --disable-pip-version-check playwright
+          python -m playwright install --with-deps chromium
+
+      - name: Build local versions and deploy PostgreSQL
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p screenshots
+
+          python - <<'PY'
+          from pathlib import Path
+          p = Path("app/app.py")
+          text = p.read_text(encoding="utf-8")
+          anchor = 'DB_PORT = os.getenv("DB_PORT", "5432")'
+          if anchor not in text:
+              raise SystemExit("Could not locate DB_PORT setting in app/app.py")
+          text = text.replace(
+              anchor,
+              anchor + '\nAPP_VERSION = os.getenv("APP_VERSION", "2.0")\nDEPLOYMENT_ENV = os.getenv("DEPLOYMENT_ENV", "Docker")',
+              1,
+          )
+          text = text.replace(
+              "<p>Версия приложения: 2.0</p>",
+              "<p>Версия приложения: {APP_VERSION}</p>",
+              1,
+          )
+          text = text.replace(
+              "<p>Контейнеризация: Docker</p>",
+              "<p>Среда развертывания: {DEPLOYMENT_ENV}</p>",
+              1,
+          )
+          if "{APP_VERSION}" not in text or "{DEPLOYMENT_ENV}" not in text:
+              raise SystemExit("Could not patch application version/environment labels")
+          p.write_text(text, encoding="utf-8")
+          PY
+
+          docker build -t corporate-data-app:2.1.0 ./app
+          docker tag corporate-data-app:2.1.0 ghcr.io/mostotank-design/corporate-data-platform:2.1.0
+          docker build -t corporate-data-app:2.2.0 ./app
+          docker tag corporate-data-app:2.2.0 ghcr.io/mostotank-design/corporate-data-platform:2.2.0
+          kind load docker-image ghcr.io/mostotank-design/corporate-data-platform:2.1.0
+          kind load docker-image ghcr.io/mostotank-design/corporate-data-platform:2.2.0
+
+          kubectl create configmap postgres-init --from-file=init.sql=database/init.sql
+          kubectl apply -f - <<'YAML'
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: corporate-data-db
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: corporate-data-db
+            template:
+              metadata:
+                labels:
+                  app: corporate-data-db
+              spec:
+                containers:
+                  - name: postgres
+                    image: postgres:16
+                    ports:
+                      - containerPort: 5432
+                    env:
+                      - name: POSTGRES_DB
+                        value: corporate
+                      - name: POSTGRES_USER
+                        value: corporate_user
+                      - name: POSTGRES_PASSWORD
+                        value: corporate_password
+                    readinessProbe:
+                      exec:
+                        command: ["sh", "-c", "pg_isready -U corporate_user -d corporate"]
+                      initialDelaySeconds: 3
+                      periodSeconds: 3
+                    volumeMounts:
+                      - name: init-sql
+                        mountPath: /docker-entrypoint-initdb.d
+                volumes:
+                  - name: init-sql
+                    configMap:
+                      name: postgres-init
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: corporate-data-db
+          spec:
+            selector:
+              app: corporate-data-db
+            ports:
+              - port: 5432
+                targetPort: 5432
+          YAML
+
+          kubectl rollout status deployment/corporate-data-db --timeout=180s
+
+      - name: Deploy version 2.1.0 and roll forward to 2.2.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/deployment.yaml <<'YAML'
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: corporate-data-deployment
+            annotations:
+              kubernetes.io/change-cause: "Release 2.1.0"
+          spec:
+            replicas: 2
+            strategy:
+              type: RollingUpdate
+              rollingUpdate:
+                maxUnavailable: 1
+                maxSurge: 1
+            selector:
+              matchLabels:
+                app: corporate-data-app
+            template:
+              metadata:
+                labels:
+                  app: corporate-data-app
+                annotations:
+                  app-version: "2.1.0"
+              spec:
+                containers:
+                  - name: app
+                    image: ghcr.io/mostotank-design/corporate-data-platform:2.1.0
+                    imagePullPolicy: IfNotPresent
+                    ports:
+                      - containerPort: 8000
+                    env:
+                      - name: DB_HOST
+                        value: corporate-data-db
+                      - name: DB_PORT
+                        value: "5432"
+                      - name: DB_NAME
+                        value: corporate
+                      - name: DB_USER
+                        value: corporate_user
+                      - name: DB_PASSWORD
+                        value: corporate_password
+                      - name: APP_VERSION
+                        value: "2.1.0"
+                      - name: DEPLOYMENT_ENV
+                        value: Kubernetes
+                    readinessProbe:
+                      httpGet:
+                        path: /
+                        port: 8000
+                      initialDelaySeconds: 3
+                      periodSeconds: 3
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: corporate-data-service
+          spec:
+            selector:
+              app: corporate-data-app
+            ports:
+              - port: 80
+                targetPort: 8000
+          YAML
+
+          kubectl apply -f /tmp/deployment.yaml
+          kubectl rollout status deployment/corporate-data-deployment --timeout=180s
+
+          {
+            echo '$ kubectl get deployment'
+            kubectl get deployment
+            echo
+            echo '$ kubectl get pods'
+            kubectl get pods
+            echo
+            echo '$ kubectl get deployment corporate-data-deployment -o jsonpath=...'
+            kubectl get deployment corporate-data-deployment -o jsonpath='{.spec.template.spec.containers[0].image}{"\n"}'
+          } > screenshots/initial-state.txt
+
+          sed -i \
+            -e 's/Release 2.1.0/Release 2.2.0/' \
+            -e 's/app-version: "2.1.0"/app-version: "2.2.0"/' \
+            -e 's/platform:2.1.0/platform:2.2.0/' \
+            -e 's/value: "2.1.0"/value: "2.2.0"/' \
+            /tmp/deployment.yaml
+
+          timeout 30s kubectl get pods -w > screenshots/rolling-update-watch.txt 2>&1 &
+          WATCH_PID=$!
+          sleep 2
+          {
+            echo '$ kubectl apply -f /tmp/deployment.yaml'
+            kubectl apply -f /tmp/deployment.yaml
+            echo
+            echo '$ kubectl rollout status deployment/corporate-data-deployment'
+            kubectl rollout status deployment/corporate-data-deployment --timeout=180s
+            echo
+            echo '$ kubectl get pods'
+            kubectl get pods
+          } >> screenshots/rolling-update-watch.txt 2>&1
+          sleep 2
+          kill "$WATCH_PID" 2>/dev/null || true
+          wait "$WATCH_PID" 2>/dev/null || true
+
+          {
+            echo '$ kubectl rollout history deployment/corporate-data-deployment'
+            kubectl rollout history deployment/corporate-data-deployment
+            echo
+            echo '$ kubectl describe deployment corporate-data-deployment'
+            kubectl describe deployment corporate-data-deployment
+          } > screenshots/rollout-history.txt
+
+          kubectl port-forward service/corporate-data-service 8080:80 > /tmp/port-forward.log 2>&1 &
+          echo "$!" > /tmp/port-forward.pid
+          for attempt in $(seq 1 30); do
+            if curl --silent --fail http://127.0.0.1:8080/ >/tmp/application.html; then
+              break
+            fi
+            sleep 2
+          done
+          grep -q 'Версия приложения: 2.2.0' /tmp/application.html
+          grep -q 'Среда развертывания: Kubernetes' /tmp/application.html
+          grep -q 'Northwind Analytics' /tmp/application.html
+
+          python - <<'PY'
+          from playwright.sync_api import sync_playwright
+          with sync_playwright() as p:
+              browser = p.chromium.launch()
+              page = browser.new_page(viewport={"width": 1440, "height": 1000}, device_scale_factor=1)
+              page.goto("http://127.0.0.1:8080", wait_until="networkidle")
+              page.screenshot(path="screenshots/application-2.2.0.png", full_page=True)
+              assert page.get_by_text("Версия приложения: 2.2.0").count() == 1
+              assert page.get_by_text("Среда развертывания: Kubernetes").count() == 1
+              assert page.get_by_text("Northwind Analytics").count() == 1
+              browser.close()
+          PY
+
+      - name: Demonstrate failed image pull and rollback
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo '$ kubectl set image deployment/corporate-data-deployment app=ghcr.io/mostotank-design/corporate-data-platform:9.9.9'
+            kubectl set image deployment/corporate-data-deployment app=ghcr.io/mostotank-design/corporate-data-platform:9.9.9
+            echo
+            echo '$ waiting for ImagePullBackOff / ErrImagePull'
+            for attempt in $(seq 1 30); do
+              kubectl get pods --no-headers | grep -Eq 'ImagePullBackOff|ErrImagePull' && break || true
+              sleep 2
+            done
+            kubectl get pods
+            echo
+            BAD_POD=$(kubectl get pods -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.status.containerStatuses[0].state.waiting.reason}{"\n"}{end}' | awk '$2=="ImagePullBackOff" || $2=="ErrImagePull" {print $1; exit}')
+            if [ -n "$BAD_POD" ]; then
+              echo "\$ kubectl describe pod $BAD_POD"
+              kubectl describe pod "$BAD_POD"
+            fi
+            echo
+            echo '$ kubectl rollout status deployment/corporate-data-deployment --timeout=30s'
+            kubectl rollout status deployment/corporate-data-deployment --timeout=30s || true
+            echo
+            echo '$ kubectl rollout undo deployment/corporate-data-deployment'
+            kubectl rollout undo deployment/corporate-data-deployment
+            echo
+            echo '$ kubectl rollout status deployment/corporate-data-deployment'
+            kubectl rollout status deployment/corporate-data-deployment --timeout=180s
+            echo
+            echo '$ kubectl get pods'
+            kubectl get pods
+            echo
+            echo '$ kubectl get deployment corporate-data-deployment -o jsonpath=...'
+            kubectl get deployment corporate-data-deployment -o jsonpath='{.spec.template.spec.containers[0].image}{"\n"}'
+          } > screenshots/failure-and-rollback.txt 2>&1
+
+          grep -q 'ImagePullBackOff\|ErrImagePull' screenshots/failure-and-rollback.txt
+          grep -q 'rolled back' screenshots/failure-and-rollback.txt
+          grep -q 'corporate-data-platform:2.2.0' screenshots/failure-and-rollback.txt
+
+          python - <<'PY'
+          from playwright.sync_api import sync_playwright
+          with sync_playwright() as p:
+              browser = p.chromium.launch()
+              page = browser.new_page(viewport={"width": 1440, "height": 1000}, device_scale_factor=1)
+              page.goto("http://127.0.0.1:8080", wait_until="networkidle")
+              page.screenshot(path="screenshots/application-after-rollback.png", full_page=True)
+              browser.close()
+          PY
+
+          {
+            echo '$ kubectl get deployment'
+            kubectl get deployment
+            echo
+            echo '$ kubectl get pods'
+            kubectl get pods
+            echo
+            echo '$ kubectl rollout history deployment/corporate-data-deployment'
+            kubectl rollout history deployment/corporate-data-deployment
+            echo
+            echo '$ kubectl rollout status deployment/corporate-data-deployment'
+            kubectl rollout status deployment/corporate-data-deployment
+            echo
+            echo '$ final image'
+            kubectl get deployment corporate-data-deployment -o jsonpath='{.spec.template.spec.containers[0].image}{"\n"}'
+          } > screenshots/final-state.txt
+
+      - name: Render terminal evidence as screenshots
+        shell: bash
+        run: |
+          python - <<'PY'
+          from html import escape
+          from pathlib import Path
+          from playwright.sync_api import sync_playwright
+
+          items = [
+              ("initial-state", "Deployment before the update"),
+              ("rolling-update-watch", "Rolling Update and Pod replacement"),
+              ("rollout-history", "Deployment history and configuration"),
+              ("failure-and-rollback", "ImagePullBackOff and rollout undo"),
+              ("final-state", "Final healthy Deployment"),
+          ]
+          out = Path("screenshots")
+          with sync_playwright() as p:
+              browser = p.chromium.launch()
+              page = browser.new_page(viewport={"width": 1600, "height": 1100}, device_scale_factor=1)
+              for filename, title in items:
+                  body = (out / f"{filename}.txt").read_text(encoding="utf-8", errors="replace")
+                  html = f"""<!doctype html><html><head><meta charset="utf-8">
+                  <style>
+                  body {{ margin:0; background:#101820; color:#d5e4e8; font:15px/1.35 Consolas,monospace; }}
+                  header {{ background:#17365d; color:white; padding:18px 24px; font:600 20px Arial,sans-serif; }}
+                  pre {{ white-space:pre-wrap; overflow-wrap:anywhere; padding:22px 26px; margin:0; }}
+                  .bar {{ height:12px; background:#243746; }}
+                  </style></head><body><header>{escape(title)}</header><div class="bar"></div><pre>{escape(body)}</pre></body></html>"""
+                  page.set_content(html, wait_until="load")
+                  page.screenshot(path=str(out / f"{filename}.png"), full_page=True)
+              browser.close()
+          PY
+
+      - name: Upload screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: practice-3-5-screenshots
+          path: screenshots/*.png
+          if-no-files-found: error
+          retention-days: 14
