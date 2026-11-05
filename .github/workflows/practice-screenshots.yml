@@ -64,8 +64,8 @@ jobs:
           docker tag corporate-data-app:2.1.0 ghcr.io/mostotank-design/corporate-data-platform:2.1.0
           docker build -t corporate-data-app:2.2.0 ./app
           docker tag corporate-data-app:2.2.0 ghcr.io/mostotank-design/corporate-data-platform:2.2.0
-          kind load docker-image ghcr.io/mostotank-design/corporate-data-platform:2.1.0
-          kind load docker-image ghcr.io/mostotank-design/corporate-data-platform:2.2.0
+          kind load docker-image ghcr.io/mostotank-design/corporate-data-platform:2.1.0 --name practice-demo
+          kind load docker-image ghcr.io/mostotank-design/corporate-data-platform:2.2.0 --name practice-demo
 
           kubectl create configmap postgres-init --from-file=init.sql=database/init.sql
           kubectl apply -f - <<'YAML'
