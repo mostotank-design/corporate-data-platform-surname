@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  packages: read
 
 jobs:
   kubernetes-rollout:
@@ -26,6 +27,27 @@ jobs:
         run: |
           python -m pip install --disable-pip-version-check playwright
           python -m playwright install --with-deps chromium
+
+      - name: Verify release tag and registry image
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git fetch --tags origin
+          {
+            echo '$ git log --oneline --decorate -10 v2.2.0'
+            git --no-pager log --oneline --decorate -10 v2.2.0
+          } > screenshots/git-release-tag.txt
+          echo "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          {
+            echo '$ docker pull ghcr.io/mostotank-design/corporate-data-platform:2.2.0'
+            docker pull ghcr.io/mostotank-design/corporate-data-platform:2.2.0
+            echo
+            echo '$ docker image inspect ghcr.io/mostotank-design/corporate-data-platform:2.2.0'
+            docker image inspect ghcr.io/mostotank-design/corporate-data-platform:2.2.0 --format 'Image={{index .RepoTags 0}}{{printf "\\n"}}ID={{.Id}}'
+          } > screenshots/registry-image.txt 2>&1
+          kind load docker-image ghcr.io/mostotank-design/corporate-data-platform:2.2.0 --name practice-demo
 
       - name: Build local versions and deploy PostgreSQL
         shell: bash
@@ -62,10 +84,7 @@ jobs:
 
           docker build -t corporate-data-app:2.1.0 ./app
           docker tag corporate-data-app:2.1.0 ghcr.io/mostotank-design/corporate-data-platform:2.1.0
-          docker build -t corporate-data-app:2.2.0 ./app
-          docker tag corporate-data-app:2.2.0 ghcr.io/mostotank-design/corporate-data-platform:2.2.0
           kind load docker-image ghcr.io/mostotank-design/corporate-data-platform:2.1.0 --name practice-demo
-          kind load docker-image ghcr.io/mostotank-design/corporate-data-platform:2.2.0 --name practice-demo
 
           kubectl create configmap postgres-init --from-file=init.sql=database/init.sql
           kubectl apply -f - <<'YAML'
@@ -353,6 +372,8 @@ jobs:
               ("initial-state", "Deployment before the update"),
               ("rolling-update-watch", "Rolling Update and Pod replacement"),
               ("rollout-history", "Deployment history and configuration"),
+              ("git-release-tag", "Git release tag v2.2.0"),
+              ("registry-image", "Published GHCR image 2.2.0"),
               ("failure-and-rollback", "ImagePullBackOff and rollout undo"),
               ("final-state", "Final healthy Deployment"),
           ]
