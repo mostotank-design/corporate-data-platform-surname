@@ -4,7 +4,8 @@ on:
   push:
     branches:
       - main
-      - feature-ci
+    tags:
+      - "v*"
   pull_request:
     branches:
       - main
@@ -21,6 +22,11 @@ jobs:
       - name: Get project source code
         uses: actions/checkout@v5
 
+      - name: Get release version
+        if: startsWith(github.ref, 'refs/tags/v')
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
       - name: Check Python syntax
         run: python -m py_compile app/app.py
 
@@ -28,7 +34,7 @@ jobs:
         uses: docker/setup-buildx-action@v4
 
       - name: Log in to GitHub Container Registry
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
         uses: docker/login-action@v4
         with:
           registry: ghcr.io
@@ -36,10 +42,20 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and publish Docker image
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: docker/build-push-action@v7
         with:
           context: ./app
-          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/corporate-data-platform:latest
             ghcr.io/${{ github.repository_owner }}/corporate-data-platform:${{ github.sha }}
+
+      - name: Build and publish release image
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: docker/build-push-action@v7
+        with:
+          context: ./app
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/corporate-data-platform:${{ steps.version.outputs.VERSION }}
+            ghcr.io/${{ github.repository_owner }}/corporate-data-platform:latest
