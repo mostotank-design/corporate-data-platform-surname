@@ -1,7 +1,7 @@
 services:
   db:
     image: postgres:18
-    ports: 
+    ports:
       - "5432:5432"
     environment:
       POSTGRES_DB: corporate
@@ -11,7 +11,7 @@ services:
       - postgres_data:/var/lib/postgresql
       - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U corporate_user -d corporate" ]
+      test: ["CMD-SHELL", "pg_isready -U corporate_user -d corporate"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -30,6 +30,34 @@ services:
     depends_on:
       db:
         condition: service_healthy
+
+  airflow:
+    image: apache/airflow:3.1.0
+    container_name: corporate-airflow
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg://corporate_user:corporate_password@db:5432/corporate
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: corporate
+      DB_USER: corporate_user
+      DB_PASSWORD: corporate_password
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./airflow/output:/opt/airflow/output
+    ports:
+      - "8081:8080"
+    command: >
+      bash -c "
+      pip install --no-cache-dir 'psycopg[binary]' &&
+      airflow standalone
+      "
 
 volumes:
   postgres_data:

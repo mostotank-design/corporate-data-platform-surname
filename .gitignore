@@ -17,3 +17,6 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.log
+
+# Apache Airflow runtime logs
+airflow/logs/
