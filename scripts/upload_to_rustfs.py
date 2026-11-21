@@ -7,8 +7,16 @@ import boto3
 from botocore.config import Config
 
 project_root = Path(__file__).resolve().parents[1]
-file_path = project_root / "airflow" / "output" / "companies_by_city.csv"
+env_file = project_root / ".env"
+if env_file.is_file():
+    for line in env_file.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        name, value = line.split("=", 1)
+        os.environ.setdefault(name.strip(), value.strip().strip("\"'"))
 
+file_path = project_root / "airflow" / "output" / "companies_by_city.csv"
 if not file_path.is_file():
     raise FileNotFoundError(
         f"Файл не найден: {file_path}. Сначала выполните DAG из работы № 9."
