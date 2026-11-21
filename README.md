@@ -1,44 +1,70 @@
-\# Corporate Data Platform Учебный проект по дисциплине «Современные технологии разработки программного обеспечения». 
+# Corporate Data Platform
 
-\## Цель проекта – создание корпоративной программной платформы для обработки, хранения и анализа данных. 
+Учебный проект по дисциплине «Современные технологии разработки программного обеспечения».
 
-\## Планируемые компоненты - Git - Docker - Docker Compose - Kubernetes - CI/CD - Apache Airflow - MinIO - DuckDB - NetworkX 14 - Grafana  
+## Назначение
 
-\## Автор Первушин Егор 
+Платформа предназначена для получения, хранения, обработки и аналитики корпоративных данных.
 
-\## Группа ЭУ 212
-## Назначение платформы
-Платформа предназначена для получения, хранения, обработки и анализа корпоративных
-данных.
-В рамках проекта будут последовательно реализованы контейнеризация, автоматизация
-обработки данных, аналитика и мониторинг.
-## Docker Первый сервис платформы контейнеризирован с помощью Docker. Для сборки образа используется команда: ``` docker build -t corporate-data-app:2.0 ./app ``` Для создания и запуска контейнера используется команда: ``` docker run -d -p 8000:8000 --name corporate-data-container-v2 corporate-data-app:2.0 ``` После запуска сервис доступен по адресу: 18 ``` http://localhost:8000 ``` Для остановки контейнера используется команда: ``` docker stop corporate-data-container-v2 ``` Для удаления остановленного контейнера используется команда: ``` docker rm corporate-data-container-v2 
-## Docker Compose Платформа содержит многоконтейнерное приложение. На текущем этапе используются два сервиса: - `app` – Python-приложение; - `db` – PostgreSQL. Для запуска платформы: ``` docker compose up -d --build ``` 18 Проверка состояния: ``` docker compose ps ``` Просмотр журналов: ``` docker compose logs ``` Остановка: ``` docker compose down ``` После запуска приложение доступно по адресу: [http://localhost:8000](http://localhost:8000) 
+## Компоненты
+
+- Веб-приложение — работа с организациями, порт 8000.
+- PostgreSQL — операционные данные.
+- Apache Airflow — ETL-конвейер, интерфейс на порту 8081.
+- RustFS — объектное хранилище с S3 API на порту 9000 и веб-консолью на порту 9001.
+- DuckDB — аналитические SQL-запросы к CSV и объектам Data Lake.
+- Kubernetes — манифесты развертывания находятся в каталоге kubernetes/.
+
+## Запуск Docker Compose
+
+Создайте локальный .env из примера и укажите ключи RustFS:
+
+    Copy-Item .env.example .env
+    docker compose up -d --build
+    docker compose ps
+
+Сервисы доступны локально:
+
+- Приложение: http://localhost:8000
+- Airflow: http://localhost:8081
+- RustFS S3 API: http://localhost:9000
+- RustFS Console: http://localhost:9001
+
+Не добавляйте .env с ключами доступа в Git.
+
+## DuckDB: аналитика данных
+
+Установите зависимости из корня проекта:
+
+    python -m pip install -r analytics/requirements.txt
+
+Запустите исследование и аналитические запросы к RAW CSV:
+
+    python analytics/explore_data.py
+    python analytics/analyze_companies.py
+
+Скрипт analyze_companies.py рассчитывает сводные показатели, группировки по городам и отраслям, применяет HAVING и формирует:
+
+- analytics/reports/city_analytics.csv
+- analytics/reports/conclusions.md
+
+Для прямого чтения объектов из RustFS через DuckDB:
+
+    python analytics/analyze_rustfs.py
+
+Скрипт использует расширение DuckDB httpfs. Если оно не устанавливается, загрузите объекты через boto3 и проанализируйте локальные копии:
+
+    python analytics/download_rustfs.py
+
+Подробнее: docs/data-lake.md и docs/analytics.md.
+
 ## Kubernetes
 
-Приложение может быть развернуто в локальном Kubernetes-кластере Docker Desktop.
+Манифесты находятся в каталоге kubernetes/. Для локального кластера Docker Desktop:
 
-Манифесты находятся в каталоге:
-```text
-kubernetes/
-```
+    kubectl apply -f kubernetes/deployment.yaml
+    kubectl get pods
 
-Основной Deployment:
-```text
-corporate-data-deployment
-```
+## Автор
 
-PostgreSQL запускается отдельно через Docker Compose:
-```bash
-docker compose up -d db
-```
-
-Запуск Kubernetes-конфигурации:
-```bash
-kubectl apply -f kubernetes/deployment.yaml
-```
-
-Проверка:
-```bash
-kubectl get pods
-```
+Первушин Егор, группа ЭУ 212.
