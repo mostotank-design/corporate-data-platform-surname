@@ -62,7 +62,7 @@ python -m pip install boto3
 python scripts/upload_to_rustfs.py
 ```
 
-Скрипт использует `localhost:9000`, потому что запускается на компьютере. Задача Airflow использует `rustfs:9000`, потому что обращается к RustFS из сети Docker Compose.
+Скрипт читает локальный `.env` без дополнительной библиотеки. Он использует `localhost:9000`, потому что запускается на компьютере. Задача Airflow использует `rustfs:9000`, потому что обращается к RustFS из сети Docker Compose.
 
 ## Проверка обновления
 
