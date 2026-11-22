@@ -68,3 +68,26 @@
 ## Автор
 
 Первушин Егор, группа ЭУ 212.
+
+
+## NetworkX: графовая аналитика
+
+Графовый модуль строит модель организаций, городов и отраслей из
+`data/raw/companies.csv`. Вершины имеют типы `company`, `city` и `industry`,
+а ребра отражают расположение организации в городе и принадлежность к отрасли.
+Модуль анализирует соседей, общие связи, степени вершин, центральность,
+компоненты связности и кратчайшие пути.
+
+Установка зависимостей:
+
+    python -m pip install -r analytics/requirements.txt
+
+Запуск примера и анализа:
+
+    python analytics/graphs/first_graph.py
+    python analytics/graphs/build_company_graph.py
+    python analytics/graphs/visualize_graph.py
+
+Визуализация сохраняется в `analytics/reports/company_graph.png`, результаты
+анализа описаны в `analytics/reports/graph_analysis.md`. Подробности модели:
+`docs/graph-model.md`.
